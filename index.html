@@ -94,7 +94,6 @@
   }
   .streak-info strong { color: var(--accent); font-size: 13px; }
 
-  /* Grid de meses: 2 colunas no desktop, 1 no mobile */
   .calendar {
     width: 100%;
     max-width: 860px;
@@ -107,8 +106,6 @@
     .calendar { grid-template-columns: 1fr; }
   }
 
-  .month-block {}
-
   .month-header {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 18px;
@@ -118,7 +115,6 @@
     opacity: 0.7;
   }
 
-  /* 7 colunas fixas: Dom–Sáb */
   .week-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -161,7 +157,6 @@
   .day.future:hover { transform: none; border-color: var(--border); }
   .day.empty { background: transparent; border-color: transparent; cursor: default; pointer-events: none; }
 
-  /* Tooltip — elemento único compartilhado, sem ::after em cada célula */
   #tip {
     position: fixed;
     background: #111;
@@ -262,27 +257,87 @@
                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const DOWS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
+  const API_URL = '10IA8IHZfyqyx2aLD4SgU_dV3fnWCDzTcXnkQyYfhThE';
+  const USER_ID = 'ricardo';
+
   let currentYear = new Date().getFullYear();
-  let trained = JSON.parse(localStorage.getItem('ironlog_trained') || '{}');
+  let trained = {};
 
   function dateKey(y, m, d) {
-    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
 
-  function toggle(k, el) {
-    if (trained[k]) {
-      delete trained[k];
-      el.classList.remove('trained');
-      showToast('Treino removido');
-    } else {
-      trained[k] = 1;
-      el.classList.add('trained');
-      showToast('💪 Treino registrado!');
+  async function loadTrained() {
+    try {
+      const res = await fetch(`${API_URL}?user_id=${encodeURIComponent(USER_ID)}`);
+      const data = await res.json();
 
+      if (!data.ok) {
+        throw new Error(data.error || 'Erro ao carregar treinos');
+      }
+
+      trained = data.trained || {};
+      render();
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao carregar treinos');
     }
-    localStorage.setItem('ironlog_trained', JSON.stringify(trained));
-    updateCounter();
-    updateStreak();
+  }
+
+  async function saveTraining(date, isTrained) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        user_id: USER_ID,
+        date: date,
+        trained: isTrained
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Erro ao salvar treino');
+    }
+  }
+
+  async function toggle(k, el) {
+    const wasTrained = !!trained[k];
+    const nextValue = !wasTrained;
+
+    try {
+      if (nextValue) {
+        trained[k] = 1;
+        el.classList.add('trained');
+        showToast('💪 Treino registrado!');
+      } else {
+        delete trained[k];
+        el.classList.remove('trained');
+        showToast('Treino removido');
+      }
+
+      updateCounter();
+      updateStreak();
+
+      await saveTraining(k, nextValue);
+    } catch (err) {
+      console.error(err);
+
+      if (wasTrained) {
+        trained[k] = 1;
+        el.classList.add('trained');
+      } else {
+        delete trained[k];
+        el.classList.remove('trained');
+      }
+
+      updateCounter();
+      updateStreak();
+      showToast('Erro ao salvar');
+    }
   }
 
   function updateCounter() {
@@ -296,10 +351,12 @@
     const today = new Date();
     let streak = 0, d = new Date(today);
     let guard = 0;
+
     while (guard++ < 365 && trained[dateKey(d.getFullYear(), d.getMonth(), d.getDate())]) {
       streak++;
       d.setDate(d.getDate() - 1);
     }
+
     const el = document.getElementById('streakInfo');
     el.innerHTML = streak > 0
       ? `🔥 Sequência: <strong>${streak} dia${streak > 1 ? 's' : ''}</strong>`
@@ -319,7 +376,6 @@
     const grid = document.createElement('div');
     grid.className = 'week-grid';
 
-    // Cabeçalho dias da semana
     DOWS.forEach((d, i) => {
       const cell = document.createElement('div');
       cell.className = 'dow-header' + (i === 0 || i === 6 ? ' weekend' : '');
@@ -327,10 +383,9 @@
       grid.appendChild(cell);
     });
 
-    const firstDay = new Date(year, monthIdx, 1).getDay(); // 0=Dom
+    const firstDay = new Date(year, monthIdx, 1).getDay();
     const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
 
-    // Células vazias antes do dia 1
     for (let i = 0; i < firstDay; i++) {
       const empty = document.createElement('div');
       empty.className = 'day empty';
@@ -346,14 +401,17 @@
       el.className = 'day';
       el.textContent = d;
 
-      if (trained[k])  el.classList.add('trained');
+      if (trained[k]) el.classList.add('trained');
       if (k === todayKey) el.classList.add('today');
-      if (isFuture)    el.classList.add('future');
+      if (isFuture) el.classList.add('future');
 
       const dow = DOWS[dateObj.getDay()];
       el.setAttribute('data-tip', `${dow}, ${d} de ${MONTHS[monthIdx]}`);
 
-      if (!isFuture) el.addEventListener('click', () => toggle(k, el));
+      if (!isFuture) {
+        el.addEventListener('click', () => toggle(k, el));
+      }
+
       grid.appendChild(el);
     }
 
@@ -364,6 +422,7 @@
   function render() {
     const cal = document.getElementById('calendar');
     cal.innerHTML = '';
+
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
@@ -376,14 +435,20 @@
     updateStreak();
   }
 
-  function changeYear(delta) { currentYear += delta; render(); }
+  function changeYear(delta) {
+    currentYear += delta;
+    render();
+  }
 
   function goToday() {
     currentYear = new Date().getFullYear();
     render();
+
     const m = new Date().getMonth();
     const el = document.getElementById(`month-${m}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
   let toastTimer;
@@ -395,27 +460,30 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
   }
 
-  // Tooltip global — um único elemento, zero repaints por célula
   const tip = document.getElementById('tip');
-  let tipTimer;
+
   document.getElementById('calendar').addEventListener('mouseover', e => {
     const day = e.target.closest('.day:not(.empty):not(.future)');
     if (!day) return;
+
     const label = day.getAttribute('data-tip');
     if (!label) return;
+
     tip.textContent = label;
     tip.style.opacity = '1';
   });
+
   document.getElementById('calendar').addEventListener('mousemove', e => {
     tip.style.left = (e.clientX + 12) + 'px';
     tip.style.top  = (e.clientY - 28) + 'px';
   });
+
   document.getElementById('calendar').addEventListener('mouseout', e => {
     const day = e.target.closest('.day');
     if (day) tip.style.opacity = '0';
   });
 
-  render();
+  loadTrained();
 </script>
 </body>
 </html>
