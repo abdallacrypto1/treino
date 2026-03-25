@@ -278,6 +278,7 @@
 
       trained = data.trained || {};
       render();
+      scrollToToday();
     } catch (err) {
       console.error(err);
       showToast('Erro ao carregar treinos');
@@ -435,6 +436,11 @@
     updateStreak();
   }
 
+  function scrollToToday() {
+    const el = document.getElementById(`month-${new Date().getMonth()}`);
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
+
   function changeYear(delta) {
     currentYear += delta;
     render();
@@ -443,7 +449,6 @@
   function goToday() {
     currentYear = new Date().getFullYear();
     render();
-
     const m = new Date().getMonth();
     const el = document.getElementById(`month-${m}`);
     if (el) {
